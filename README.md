@@ -4,9 +4,25 @@
 
 # ComfyUI H3 Streaming v2
 
-RTX 4070 12GBでMiniMax H3 Ref2VAを高速化する、FC1 W4A4 + Streaming VSA構成です。832×1408 / 124f / 4stepで実生成検証済みです。
-**FC1 Plain ConvRot W4A4、事前保存したINT8 Gate、固定padding判定キャッシュ**を組み合わせます。
-重み変換は導入時に一度だけ行い、生成時はCPUからロードしてComfyUIのDynamic VRAM / offloadを利用します。
+**MiniMax H3 Ref2VA（参照画像から動画を作るモード）を、RTX 4070 12GBで1024×1792・音声付き約3分17秒で生成するComfyUIノードです。同じモデルをスパースなしで動かす場合（約11分12秒）の約3.4倍速です。**
+
+| Ref2VA・1024×1792・124フレーム・4step | 生成時間 |
+|---|---:|
+| スパースなし（通常のattention） | 671.8秒（11分11.8秒） |
+| **本repo：W4A4 + Streaming VSA 5%** | **197.0秒（3分17.0秒）** |
+| 参考：ComfyUIネイティブのスパースattention（SLA 5%） | 189.2秒（3分9.2秒） |
+
+[さやかベンチマーク](https://sayakabenchmark.pages.dev/)のRef2VAタブ、case01の実測です（2026-09-29、同日・各1回）。上から順にRef2VA [013](https://sayakabenchmark.pages.dev/benchmarks/ref2va/013-matlow-fused4-dense/workflow.json)、[016](https://sayakabenchmark.pages.dev/benchmarks/ref2va/016-w4a4-streaming-vsa5/workflow.json)、[012](https://sayakabenchmark.pages.dev/benchmarks/ref2va/012-matlow-fused4-sla5/workflow.json)のworkflowです（番号はサイト上の登録番号）。速度だけで見ると、ネイティブのSLA 5%が本repoと同程度かわずかに速い結果でした。
+
+> **より新しい構成：** 1088×1920出力でさらに速いRef2VAの構成として、[ComfyUI-H3-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-X2-Stream)のノードを使うRef2VA [020](https://sayakabenchmark.pages.dev/benchmarks/ref2va/020-matlow-fused4-sla5-x2vae-int8-stream/workflow.json)があります（ネイティブSLA 5%、544×960で生成して1088×1920で保存、68.9秒）。
+
+> 作者：かみもと（Kamimoto）｜検証結果の速報は **[X（@sep_is_heim）](https://x.com/sep_is_heim)**、解説記事は **[note](https://note.com/sepiablue)**（[記事INDEX](https://note.com/sepiablue/n/n8e612c619a3e)）で公開しています。
+
+### 仕組み
+
+- **FC1 W4A4**：各層のFFN前半（FC1）の重みと計算を4bitにします。変換は導入時に一度だけ行い、生成時はCPUから読み込んでComfyUIのDynamic VRAM / offloadを使います。
+- **Streaming VSA**：学習済みのGateで重要なattentionだけを計算します（初期値は5%だけ保持）。GateはINT8でCPUに置き、計算中の層の分だけGPUへ送ります。
+- 技術的には **FC1 Plain ConvRot W4A4、事前保存したINT8 Gate、固定padding判定キャッシュ** を組み合わせています。付属workflowは832×1408 / 124f / 4stepで実生成を確認しています。
 
 **Windowsでは `setup.bat` で簡単に導入できます。ComfyUI v0.36.0で導入・実生成を確認済みです。** 対応ComfyUIと必要モデルを準備すれば、Python選択・互換性検査・ノード配置・事前変換をまとめて実行できます。モデルの自動ダウンロードは行いません。
 
@@ -182,13 +198,43 @@ APIでも画像は事前にComfyUIのinputへ配置し、3つのLoadImageのフ�
 性能・検証範囲は [VALIDATION.md](VALIDATION.md) を参照してください。動画の主観的な画質・キャラ再現・音声品質は評価していません。
 ソースは [GPL-3.0](LICENSE)、由来と改変点は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。重みには各配布元のライセンスが適用されます。
 
+## 作者・関連リポジトリ
+
+かみもと（Kamimoto）です。RTX 4070 12GBで、MiniMax H3とComfyUIの高速化・省VRAM化を実測しながら公開しています。
+
+- X：[@sep_is_heim](https://x.com/sep_is_heim) — step数・秒数・短縮率などの検証速報
+- note：[かみもと｜ローカルAI生成](https://note.com/sepiablue) — 導入方法と実測の解説記事（[記事INDEX](https://note.com/sepiablue/n/n8e612c619a3e)）
+- [さやかベンチマーク](https://sayakabenchmark.pages.dev/) — H3ワークフローの速度・画質比較
+
+| リポジトリ | 内容 |
+|---|---|
+| [ComfyUI-H3-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-X2-Stream) | X2 VAEのINT8化と非同期NVENC保存。1088×1920の音声付き5秒動画を約60秒で生成 |
+| [ComfyUI-H3-LBH-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-LBH-X2-Stream) | 低解像度3step＋高解像度1step。14秒動画で約25%短縮 |
+| [ComfyUI-H3-AudioFirst-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-AudioFirst-X2-Stream) | 音声を先に作って固定し、金属的な響きを抑える2パス生成 |
+
 ---
 
 # English Documentation
 
-Accelerates MiniMax H3 Ref2VA on RTX 4070 12GB using FC1 W4A4 + Streaming VSA, validated through full generation at 832×1408 / 124 frames / 4 steps.
-Combines **FC1 Plain ConvRot W4A4, preconverted INT8 Gate, and fixed padding decision cache**.
-Weight conversion is executed once offline; during generation, weights are loaded from CPU using ComfyUI's Dynamic VRAM / offload path.
+**ComfyUI nodes that generate MiniMax H3 Ref2VA (reference images → video) at 1024×1792 with audio in about 3 min 17 s on an RTX 4070 12GB, about 3.4× faster than the same model without sparse attention (about 11 min 12 s).**
+
+| Ref2VA, 1024×1792, 124 frames, 4 steps | Generation time |
+|---|---:|
+| No sparse attention (dense) | 671.8 s (11 min 11.8 s) |
+| **This repo: W4A4 + Streaming VSA 5%** | **197.0 s (3 min 17.0 s)** |
+| Reference: ComfyUI native sparse attention (SLA 5%) | 189.2 s (3 min 9.2 s) |
+
+Measured on [Sayaka Benchmark](https://sayakabenchmark.pages.dev/), Ref2VA tab, case01 (2026-09-29, same day, one run each). The rows are Ref2VA [013](https://sayakabenchmark.pages.dev/benchmarks/ref2va/013-matlow-fused4-dense/workflow.json), [016](https://sayakabenchmark.pages.dev/benchmarks/ref2va/016-w4a4-streaming-vsa5/workflow.json) and [012](https://sayakabenchmark.pages.dev/benchmarks/ref2va/012-matlow-fused4-sla5/workflow.json) (entry numbers on the site). On speed alone, native SLA 5% was on par with or slightly faster than this repo.
+
+> **Newer configuration:** for faster Ref2VA with 1088×1920 output, see Ref2VA [020](https://sayakabenchmark.pages.dev/benchmarks/ref2va/020-matlow-fused4-sla5-x2vae-int8-stream/workflow.json), which uses the nodes from [ComfyUI-H3-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-X2-Stream) (native SLA 5%, 544×960 sampling saved at 1088×1920, 68.9 s).
+
+> Author: Kamimoto (かみもと) | Quick results on **[X (@sep_is_heim)](https://x.com/sep_is_heim)**, write-ups (Japanese) on **[note](https://note.com/sepiablue)** ([article index](https://note.com/sepiablue/n/n8e612c619a3e)).
+
+### How it works
+
+- **FC1 W4A4**: the first FFN projection (FC1) in each block runs with 4-bit weights and activations. Conversion runs once at install time; during generation, weights are loaded from CPU through ComfyUI's Dynamic VRAM / offload path.
+- **Streaming VSA**: a trained gate keeps only the important attention blocks (5% by default). The gate is held as INT8 on the CPU and only the current block's gate is sent to the GPU.
+- Technically it combines **FC1 Plain ConvRot W4A4, a preconverted INT8 Gate, and a fixed padding decision cache**. The bundled workflow was validated through full generation at 832×1408 / 124 frames / 4 steps.
 
 **Easy Windows installation with `setup.bat`; setup and full generation verified on ComfyUI v0.36.0.** With a compatible ComfyUI installation and the required models available, it handles Python selection, compatibility checks, node installation, and preconversion. Model weights are never downloaded automatically.
 
@@ -394,6 +440,8 @@ From [VALIDATION.md](VALIDATION.md), measured on Windows 11, RTX 4070 12GB:
 
 ### Comparison Across Approaches (Prompt Total)
 
+Earlier development record at 832×1408; the runs were not measured in one session. For a same-day comparison, see the Sayaka Benchmark table at the top.
+
 - **This Configuration (v2 Preconverted FC1 W4A4 + Streaming VSA)**: **149.70s** *(Candidate eval: 146.26s)*
 - **Baseline INT8**: **168.44s** *(v2 is ~19s / 11% faster)*
 - **Runtime-Convert FC1 W4A4**: **213.28s** *(v2 is ~64s / 30% faster due to elimination of runtime quantization overhead)*
@@ -417,3 +465,16 @@ From [VALIDATION.md](VALIDATION.md), measured on Windows 11, RTX 4070 12GB:
 - Upstream origins and modifications are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Model weights remain subject to their respective upstream licenses, including applicable MiniMax H3 terms. This repository does not distribute or grant redistribution rights for model weights.
 
+## Author and Related Repositories
+
+I'm Kamimoto (かみもと). I measure and publish MiniMax H3 and ComfyUI speed-ups and VRAM reductions on an RTX 4070 12 GB.
+
+- X: [@sep_is_heim](https://x.com/sep_is_heim) — quick results with step counts, seconds and speed-ups
+- note: [かみもと｜ローカルAI生成](https://note.com/sepiablue) — setup guides and measured write-ups in Japanese ([article index](https://note.com/sepiablue/n/n8e612c619a3e))
+- [Sayaka Benchmark](https://sayakabenchmark.pages.dev/) — speed and quality comparison of H3 workflows
+
+| Repository | What it does |
+|---|---|
+| [ComfyUI-H3-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-X2-Stream) | INT8 X2 VAE and asynchronous NVENC saving; 5 s 1088×1920 video with audio in about 60 s |
+| [ComfyUI-H3-LBH-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-LBH-X2-Stream) | 3 low-resolution steps + 1 high-resolution step; about 25% faster for 14 s video |
+| [ComfyUI-H3-AudioFirst-X2-Stream](https://github.com/sepiablue-ai/ComfyUI-H3-AudioFirst-X2-Stream) | Audio-first two-pass generation that reduces the metallic voice |
